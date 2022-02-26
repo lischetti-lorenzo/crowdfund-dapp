@@ -37,6 +37,11 @@ contract Campaign {
     uint public deadline; //timestamp
     uint public raisedAmount;
 
+    // Events
+    event ContributeEvent(address _sender, uint _value);
+    event CreateRequestEvent(string _description, address _recipient, uint _value);
+    event FinalizeRequestEvent(address _recipient, uint _value);
+
     modifier restrictedToManager() {
         require(msg.sender == manager, "Only manager can call to this funcion!");
         _;
@@ -53,7 +58,8 @@ contract Campaign {
         contribute();
     }
 
-    // TODO: Add test for deadline. Add test to check that an approver is not incrementing the approversCount twice
+    // TODO: Add test for deadline. Add test to check that an approver is not incrementing the approversCount twice. 
+    // Add test to check that if the same address contributes twice the total contributed value is the sum of the two contributions
     function contribute() public payable {
         require(block.timestamp < deadline, "Campaing has already finished!");
         require(msg.value > minimumContribution, "Minimum Contribution not met!");
@@ -62,6 +68,8 @@ contract Campaign {
             approversCount++;
         }
         approvers[msg.sender] += msg.value;
+
+        emit ContributeEvent(msg.sender, msg.value);
     }
 
     // TODO: Add tests for getRefunds function
@@ -84,6 +92,8 @@ contract Campaign {
         newRequest.recipient = _recipient;
         newRequest.complete = false;
         newRequest.approvalCount = 0;
+
+        emit CreateRequestEvent(_description, _recipient, _value);
     }
 
     function approveRequest(uint _index) public {
@@ -104,6 +114,8 @@ contract Campaign {
         
         request.recipient.transfer(request.value);
         request.complete = true;
+
+        emit FinalizeRequestEvent(request.recipient, request.value);
     }
 
     function getSummary() public view returns (
