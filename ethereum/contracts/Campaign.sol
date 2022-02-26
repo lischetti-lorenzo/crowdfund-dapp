@@ -58,8 +58,6 @@ contract Campaign {
         contribute();
     }
 
-    // TODO: Add test for deadline. Add test to check that an approver is not incrementing the approversCount twice. 
-    // Add test to check that if the same address contributes twice the total contributed value is the sum of the two contributions
     function contribute() public payable {
         require(block.timestamp < deadline, "Campaing has already finished!");
         require(msg.value > minimumContribution, "Minimum Contribution not met!");
@@ -68,6 +66,7 @@ contract Campaign {
             approversCount++;
         }
         approvers[msg.sender] += msg.value;
+        raisedAmount += msg.value;
 
         emit ContributeEvent(msg.sender, msg.value);
     }
