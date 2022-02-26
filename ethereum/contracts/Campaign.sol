@@ -1,14 +1,16 @@
-pragma solidity ^0.4.17;
+//SPDX-License-Identifier: MIT
+
+pragma solidity >=0.6.0 <0.9.0;
 
 contract CampaignFactory {
-    address[] public deployedCampaigns;
+    Campaign[] public deployedCampaigns;
 
-    function createCampaign(uint minimumContribution) public {
-        address newCampaign = new Campaign(minimumContribution, msg.sender);
+    function createCampaign(uint _minimumContribution, uint _goal, uint _deadline) public {
+        Campaign newCampaign = new Campaign(_minimumContribution, msg.sender, _goal, _deadline);
         deployedCampaigns.push(newCampaign);
     }
 
-    function getDeployedCampaigns() public view returns (address[]) {
+    function getDeployedCampaigns() public view returns (Campaign[] memory) {
         return deployedCampaigns;
     }
 }
@@ -17,61 +19,87 @@ contract Campaign {
     struct Request {
         string description;
         uint value;
-        address recipient;
-        bool complete;
-        mapping(address => bool) requestApprovers;
         uint approvalCount;
+        address payable recipient;
+        bool complete;
+        mapping(address => bool) requestApprovers;        
     }
 
-    Request[] public requests;
+    mapping(uint => Request) public requests;
+    uint public numRequests;
+
     address public manager;
     uint public minimumContribution;
-    mapping(address => bool) public approvers;
+    mapping(address => uint) public approvers;
     uint public approversCount;
 
+    uint public goal;
+    uint public deadline; //timestamp
+    uint public raisedAmount;
+
     modifier restrictedToManager() {
-        require(msg.sender == manager);
+        require(msg.sender == manager, "Only manager can call to this funcion!");
         _;
     }
 
-    constructor(uint minimum, address creator) public {
-        manager = creator;
-        minimumContribution = minimum;
+    constructor(uint _minimum, address _creator, uint _goal, uint _deadline) {
+        manager = _creator;
+        minimumContribution = _minimum;
+        goal = _goal;
+        deadline = block.timestamp + _deadline;
     }
 
+    receive() payable external {
+        contribute();
+    }
+
+    // TODO: Add test for deadline. Add test to check that an approver is not incrementing the approversCount twice
     function contribute() public payable {
-        require(msg.value > minimumContribution);
+        require(block.timestamp < deadline, "Campaing has already finished!");
+        require(msg.value > minimumContribution, "Minimum Contribution not met!");
 
-        approvers[msg.sender] = true;
-        approversCount++;
+        if (approvers[msg.sender] == 0) {
+            approversCount++;
+        }
+        approvers[msg.sender] += msg.value;
     }
 
-    function createRequest(string memory description, uint value, address recipient)
+    // TODO: Add tests for getRefunds function
+    function getRefund() public {
+        require(block.timestamp > deadline && raisedAmount < goal);
+        require(approvers[msg.sender] > 0);
+
+        payable(msg.sender).transfer(approvers[msg.sender]);
+        approvers[msg.sender] = 0;
+    }
+
+    function createRequest(string memory _description, uint _value, address payable _recipient)
         public restrictedToManager
     {
-        Request memory newRequest = Request({
-            description: description,
-            value: value,
-            recipient: recipient,
-            complete: false,
-            approvalCount: 0
-        });
+        Request storage newRequest = requests[numRequests];
+        numRequests++;
 
-        requests.push(newRequest);
+        newRequest.description = _description;
+        newRequest.value = _value;
+        newRequest.recipient = _recipient;
+        newRequest.complete = false;
+        newRequest.approvalCount = 0;
     }
 
-    function approveRequest(uint index) public {
-        Request storage request = requests[index];
-        require(approvers[msg.sender]);
-        require(!request.requestApprovers[msg.sender]);
+    function approveRequest(uint _index) public {
+        require(approvers[msg.sender] > 0, "You must be a contributor to approve a request!");
+        Request storage request = requests[_index];
+        require(!request.requestApprovers[msg.sender], "You have already approved this request!");
 
         request.requestApprovers[msg.sender] = true;
         request.approvalCount++;
     }
 
-    function finalizeRequest(uint index) public restrictedToManager {
-        Request storage request = requests[index];
-        require(!request.complete);
+    // TODO: Add test for raisedAmount < goal.
+    function finalizeRequest(uint _index) public restrictedToManager {
+        require(raisedAmount >= goal);
+        Request storage request = requests[_index];
+        require(!request.complete, "The request has already been completed!");
         require(request.approvalCount > (approversCount / 2));
         
         request.recipient.transfer(request.value);
@@ -83,14 +111,14 @@ contract Campaign {
     ) {
         return (
             minimumContribution,
-            this.balance,
-            requests.length,
+            address(this).balance,
+            numRequests,
             approversCount,
             manager
         );
     }
 
     function getRequestsCount() public view returns (uint) {
-        return requests.length;
+        return numRequests;
     }
 }
